@@ -6,6 +6,8 @@ This work emerged from a demand by the Secretaria de Saúde de Florianópolis, i
 In Florianopolis, in the period from 2014 to 2017, the percentage of infant deaths was approximately 0.70%, while for the first half of 2018 was approximately 0.45%.
 Therefore, this work intends to contribute as a study that in the future may collaborate with the reduction of this number of deaths, using newborn data to identify high-risk patients, allowing them to receive a more attentive care to other patients, based on machine learning algorithms.
 
+There is a [dictionary of variables](https://ingoramos.github.io/tcc_mort_infantil/features) that can be useful for reading the rest of this article, to improve your understanding of the variables.
+
 ## Methodology
 
 Data from the years 2014 through 2017 were used for training the machine learning algorithms, while the data from 2018 were used for testing and validating the model. Since it is a binary classification, of a possible death or not, the confusion matrix was chosen to compute the metrics used for validation.
