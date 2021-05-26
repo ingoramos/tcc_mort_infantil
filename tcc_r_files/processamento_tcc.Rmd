@@ -1,0 +1,572 @@
+---
+title: "processamento_tcc"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+#pacotes utilizados
+#tratamento dos dados
+library(readr)
+library(plyr)
+library(chron)
+library(tidyverse)
+library(reshape2)
+library(kableExtra)
+
+#gráficos
+library(ggplot2)
+library(plotly)
+library(gridExtra)
+
+#data science and machine learning
+library(caret)
+
+#lidando com valores faltantes
+library(mice)
+```
+
+#Função para ler o arquivo
+```{r}
+read_data <- function(csv_file, sep){
+  
+  sep <- sep
+  
+  csv_file <- paste0(csv_file, ".csv")
+  
+  df <- read.csv(file=csv_file, sep = sep)
+  
+  return(df)
+}
+```
+
+
+```{r}
+df <- read_data(csv_file = "mort_infantil", ",")
+df
+```
+
+
+```{r}
+dft <- read_data(csv_file = "mort_infantil_2018", ",")
+dft
+```
+
+
+#Função para selecionar as variávis SINAS e Óbito (dependente)
+```{r}
+select_features <- function(dataframe){
+  
+  df <- dataframe[,c(1:42,91)]
+  return(df)
+}
+df <- select_features(df)
+```
+
+
+```{r}
+#função para encontrar os valores NA na base de dados, NA são os valores que não foram preenchidos
+missingValues <- function(x){sum(is.na(x))/length(x)*100}
+#aplica a função na base de dados
+missing_data <- apply(df,2,missingValues)
+missing_data
+```
+
+
+```{r}
+cols_to_input <- function(dataframe, missing_list, datatest){
+  
+  #Seleção das colunas pelo menos 95% preenchidas
+  df_col_names <- list(missing_list[missing_list <= 5])
+  
+  #extraindo o nome das colunas que serao usadas
+  df_col_names <- as.data.frame(df_col_names)
+  
+  #
+  df_col_names <- as.character(rownames(df_col_names))
+  
+  #selecionandos apenas as colunas com mais de 95% 
+  df <- dataframe[, which(names(dataframe) %in% df_col_names)]
+  
+  dft <- datatest[, which(names(datatest) %in% df_col_names)]
+  
+  return(list(df,dft))
+}
+
+df_var_sel <- cols_to_input(dataframe = df, missing_list = missing_data, datatest = dft)
+df <- df_var_sel[[1]]
+dft <- df_var_sel[[2]]
+```
+
+#Mesmo depois do problema com os valores faltantes ter sido resolvido, ainda é necessário garantir que as vaiáveis sejam classificadas da forma certa e que apenas as que realmente demonstrem algum valor para a predição sejam mantidas. Nesse processo, o dicionário de variáveis do SINASC foi utilizado para auxiliar o entendimento das variáveis. O que possibilitou a retirada de 5 variáveis que não teriam sentido, que são: #### listar aqui as variáeis ####
+```{r}
+rm_features <- function(df, dft){
+  
+  vars_df <- c("CODMUNNASC_SINASC", "CODOCUPMAE_SINASC", "CODMUNRES_SINASC", "HORANASC_SINASC", "CODMUNNATU_SINASC", "DTNASCMAE_SINASC",
+               "ESCMAEAGR2_SINASC", "UNIDADE_SINASC")
+  vars_dft <- c("CODMUNNASC_SINASC", "CODOCUPMAE_SINASC", "CODMUNRES_SINASC", "HORANASC_SINASC", "CODMUNNATU_SINASC", "DTNASCMAE_SINASC",
+                "ESCMAEAGR2_SINASC")
+  
+  df <- df[, -which(names(df) %in% vars_df)]
+
+  dft <- dft[, -which(names(dft) %in% vars_dft)]
+  
+  return(list(df,dft))
+}
+
+dfs_rm <- rm_features(df,dft)
+df <- dfs_rm[[1]]
+dft <- dfs_rm[[2]]
+```
+
+
+#REMOVER ESSA LINHA MAIS TARDE, SÓ PARA NÂO TOMAR MUITO TEMPO RODANDO
+```{r}
+df <- df[1:10000,]
+dft <- dft[1:5000, ]
+```
+
+```{r}
+direct_input <- function(dataframe){
+  #m=5 / maxit= at least 2 (5)
+  temp <- mice(dataframe, m=1, maxit=1, meth='cart', seed=2)
+  
+  completed_df <- complete(temp,1)
+
+  #write.csv2(completedSinasc, "completedSinasc.csv", row.names = F)
+  
+  return(completed_df)
+  }
+
+df <- direct_input(df)
+```
+
+
+#Método de Imputação direta
+```{r}
+missing_data_input <- apply(df,2,missingValues)
+missing_data_input
+```
+
+```{r}
+dft <- direct_input(dft)
+```
+
+```{r}
+missing_datat_input <- apply(dft,2,missingValues)
+missing_datat_input
+```
+
+### As variáveis categóricas foramo ajustadas para o formato que são apresentadas no dicionário de dados do SINASC
+```{r}
+esc_to_factor <- function(data){
+  
+  for(i in 1:nrow(data)){
+    if(data$ESCMAEAGR1_SINASC[i] == '0'){data$ESCMAEAGR1_SINASC[i] <- 'Sem escolaridade'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '1'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental I Incompleto'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '2'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental I Completo'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '3'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental II Incompleto'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '4'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental II Completo'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '5'){data$ESCMAEAGR1_SINASC[i] <- 'Ensino Médio Incompleto'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '6'){data$ESCMAEAGR1_SINASC[i] <- 'Ensino Médio Completo'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '7'){data$ESCMAEAGR1_SINASC[i] <- 'Superior Incompleto'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '8'){data$ESCMAEAGR1_SINASC[i] <- 'Superior Completo'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '9'){data$ESCMAEAGR1_SINASC[i] <- 'Ignorado'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '10'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental I Incompleto ou Inespecífico'}
+    else if(data$ESCMAEAGR1_SINASC[i] == '11'){data$ESCMAEAGR1_SINASC[i] <- 'Fundamental II Incompleto ou Inespecífico'}
+    else {data$ESCMAEAGR1_SINASC[i] <- 'Ensino Médio Incompleto ou Inespecífico.'}
+  }
+  
+  data$ESCMAEAGR1_SINASC <- as.factor(data$ESCMAEAGR1_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- esc_to_factor(df)
+dft <- esc_to_factor(dft)
+```
+
+
+```{r}
+semagest_to_factor <- function(data) {
+  
+  for(i in 1:nrow(data)){
+    if(data$GESTACAO_SINASC[i] == '9'){data$GESTACAO_SINASC[i] <- 'Ignorado'}
+    else if(data$GESTACAO_SINASC[i] == '1'){data$GESTACAO_SINASC[i] <- 'Menos de 22 semanas'}
+    else if(data$GESTACAO_SINASC[i] == '2'){data$GESTACAO_SINASC[i] <- '22 a 27 semanas'}
+    else if(data$GESTACAO_SINASC[i] == '3'){data$GESTACAO_SINASC[i] <- '28 a 31 semanas'}
+    else if(data$GESTACAO_SINASC[i] == '4'){data$GESTACAO_SINASC[i] <- '32 a 36 semanas'}
+    else if(data$GESTACAO_SINASC[i] == '5'){data$GESTACAO_SINASC[i] <- '37 a 41 semanas'}
+    else {data$GESTACAO_SINASC[i] <- '42 semanas e mais'}
+  }
+
+  data$GESTACAO_SINASC <- as.factor(data$GESTACAO_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- semagest_to_factor(df)
+dft <- semagest_to_factor(dft)
+```
+
+
+```{r}
+gravidez_to_factor <- function(data) {
+  
+  for(i in 1:nrow(data)){
+    if(data$GRAVIDEZ_SINASC[i] == '9'){data$GRAVIDEZ_SINASC[i] <- 'Ignorado'}
+    else if(data$GRAVIDEZ_SINASC[i] == '1'){data$GRAVIDEZ_SINASC[i] <- 'Única'}
+    else if(data$GRAVIDEZ_SINASC[i] == '2'){data$GRAVIDEZ_SINASC[i] <- 'Dupla'}
+    else {data$GRAVIDEZ_SINASC[i] <- 'Tripla e mais'}
+  }
+  
+  data$GRAVIDEZ_SINASC <- as.factor(data$GRAVIDEZ_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- gravidez_to_factor(df)
+dft <- gravidez_to_factor(dft)
+```
+
+
+
+```{r}
+parto_to_factor <- function(data){
+  
+  for(i in 1:nrow(data)){
+    if(data$PARTO_SINASC[i] == '9'){data$PARTO_SINASC[i] <- 'Ignorado'}
+    else if(data$PARTO_SINASC[i] == '1'){data$PARTO_SINASC[i] <- 'Vaginal'}
+    else {data$PARTO_SINASC[i] <- 'Cesáreo'}
+  }
+  
+  data$PARTO_SINASC <- as.factor(data$PARTO_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- parto_to_factor(df)
+dft <- parto_to_factor(dft)
+```
+
+
+
+```{r}
+consultas_to_factor <- function(data){
+  
+  for(i in 1:nrow(data)){
+    if(data$CONSULTAS_SINASC[i] == '9'){data$CONSULTAS_SINASC[i] <- 'Ignorado'}
+    else if(data$CONSULTAS_SINASC[i] == '1'){data$CONSULTAS_SINASC[i] <- 'Nenhuma'}
+    else if(data$CONSULTAS_SINASC[i] == '2'){data$CONSULTAS_SINASC[i] <- 'de 1 a 3'}
+    else if(data$CONSULTAS_SINASC[i] == '3'){data$CONSULTAS_SINASC[i] <- 'de 4 a 6'}
+    else {data$CONSULTAS_SINASC[i] <- '7 e mais'}
+  }
+  
+  data$CONSULTAS_SINASC <- as.factor(data$CONSULTAS_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- consultas_to_factor(df)
+dft <- consultas_to_factor(dft)
+```
+
+
+
+```{r}
+anomalia_to_factor <- function(data){
+  
+  for(i in 1:nrow(data)){
+    if(data$IDANOMAL_SINASC[i] == '9'){data$IDANOMAL_SINASC[i] <- 'Ignorado'}
+    else if(data$IDANOMAL_SINASC[i] == '1'){data$IDANOMAL_SINASC[i] <- 'Sim'}
+    else {data$IDANOMAL_SINASC[i] <- 'Não'}
+  }
+  
+  data$IDANOMAL_SINASC <- as.factor(data$IDANOMAL_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- anomalia_to_factor(df)
+dft <- anomalia_to_factor(dft)
+```
+
+
+
+```{r}
+racacor_to_factor <- function(data) {
+ 
+  for(i in 1:nrow(data)){
+    if(data$RACACORMAE_SINASC[i] == '9'){data$RACACORMAE_SINASC[i] <- 'Ignorado'}
+    else if(data$RACACORMAE_SINASC[i] == '1'){data$RACACORMAE_SINASC[i] <- 'Branca'}
+    else if(data$RACACORMAE_SINASC[i] == '2'){data$RACACORMAE_SINASC[i] <- 'Preta'}
+    else if(data$RACACORMAE_SINASC[i] == '3'){data$RACACORMAE_SINASC[i] <- 'Amarela'}
+    else if(data$RACACORMAE_SINASC[i] == '4'){data$RACACORMAE_SINASC[i] <- 'Parda'}
+    else {data$RACACORMAE_SINASC[i] <- 'Indígena'}
+  }
+  
+  data$RACACORMAE_SINASC <- as.factor(data$RACACORMAE_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- racacor_to_factor(df)
+dft <- racacor_to_factor(dft)
+```
+
+
+
+```{r}
+apgar_to_factor <- function(data){
+  
+  for(i in 1:nrow(data)){
+    if(data$APGAR1_SINASC[i] <= 2){data$APGAR1_SINASC[i] <- 'asfixia grave'}
+    else if(data$APGAR1_SINASC[i] >= 3 & data$APGAR1_SINASC[i] <= 4){data$APGAR1_SINASC[i] <- 'asfixia moderada'}
+    else if(data$APGAR1_SINASC[i] >= 5 & data$APGAR1_SINASC[i] <= 7){data$APGAR1_SINASC[i] <- 'asfixia leve'}
+    else {data$APGAR1_SINASC[i] <- 'sem asfixia'}
+  }
+  
+  data$APGAR1_SINASC <- as.factor(data$APGAR1_SINASC)
+  
+  for(i in 1:nrow(data)){
+    if(data$APGAR5_SINASC[i] <= 2){data$APGAR5_SINASC[i] <- 'asfixia grave'}
+    else if(data$APGAR5_SINASC[i] >= 3 & data$APGAR5_SINASC[i] <= 4){data$APGAR5_SINASC[i] <- 'asfixia moderada'}
+    else if(data$APGAR5_SINASC[i] >= 5 & data$APGAR5_SINASC[i] <= 7){data$APGAR5_SINASC[i] <- 'asfixia leve'}
+    else {data$APGAR5_SINASC[i] <- 'sem asfixia'}
+  }
+  
+  data$APGAR5_SINASC <- as.factor(data$APGAR5_SINASC)
+  
+  return(data)
+}
+```
+
+```{r}
+df <- apgar_to_factor(df)
+dft <- apgar_to_factor(dft)
+```
+
+
+
+#Tipos de variáveis
+```{r}
+factor_features <- c('MESPRENAT_SINASC', 'TPAPRESENT_SINASC', 'STTRABPART_SINASC', 'ESCMAEAGR1_SINASC', 'GESTACAO_SINASC', 'GRAVIDEZ_SINASC',
+                     'PARTO_SINASC', 'CONSULTAS_SINASC', 'SEXO_SINASC', 'APGAR1_SINASC', 'APGAR5_SINASC', 'IDANOMAL_SINASC',
+                     'ESCMAE2010_SINASC', 'RACACORMAE_SINASC', 'ESTCIVMAE_SINASC', 'ESCMAE_SINASC')
+
+numeric_features <- c('PESO_SINASC', 'QTDGESTANT_SINASC', 'QTDPARTNOR_SINASC', 'QTDPARTCES_SINASC', 'SEMAGESTAC_SINASC', 'CONSPRENAT_SINASC',
+                      'IDADEMAE_SINASC', 'QTDFILVIVO_SINASC', 'QTDFILMORT_SINASC')
+```
+
+
+```{r}
+class_adjust <- function(dataframe, var_list){
+  
+  fac_features <- var_list
+  
+  #transformando a classe para fator
+  dataframe[,fac_features] <- lapply(dataframe[,fac_features], factor)
+  
+  dfg <- dataframe
+  
+  return(list(dataframe,dfg))
+}
+
+dfs <- class_adjust(df, factor_features)
+
+df <- dfs[[1]]
+
+dfg <- dfs[[2]]
+
+```
+
+
+#separando os dados numéricos, padronizando os dados numéricos (z-score), desenhando matriz de correlação, retornando a base de dados com os dados padronizados e os dados categóricos.
+```{r}
+scale_df <- function(dataframe, fac_vars, num_vars){
+  #separando as variávies categóricas e numéricas
+  df_num <- dataframe[, c("NUMERODN_SINASC",num_vars,"OBITO")]
+  df_cat <- dataframe[, c("NUMERODN_SINASC",fac_vars)]
+  
+  #scale das variáveis numéricas
+  df_num <- as.matrix(df_num)
+  df_num[, -c(1,11)] <- scale(df_num[, -c(1,11)], center = TRUE, scale = TRUE)
+  
+  #matriz de correlação dos dados numéricos em relação a variável Obito
+  corr <- round(cor(df_num[, -c(1)]),2)
+  corr <- melt(corr)
+  
+  #heatmap de correlação 
+  hm <- ggplot(data=corr, aes(x=Var1, y=Var2, fill=value))+
+          theme(axis.text.x = element_text(angle = 45, vjust = 1,
+                                           size = 12, hjust = 1))+
+          geom_tile()
+  
+  #juntando as variáveis numéricas escaladas e as variaáveis categóricas pelo "numerodn"
+  df_num <- as.data.frame(df_num)
+  df <- merge(df_cat,df_num, by="NUMERODN_SINASC")
+  
+  return(list(df,hm))
+}
+
+df_hm <- scale_df(df, factor_features, numeric_features)
+df_hm[[2]]
+df <- df_hm[[1]]
+```
+
+
+```{r}
+dft_hm <- scale_df(dft, factor_features, numeric_features)
+dft_hm[[2]]
+dft <- dft_hm[[1]]
+```
+
+
+#seleção das variáveis importantes
+```{r, include=FALSE}
+library(Boruta)
+```
+
+```{r, include=FALSE}
+library(randomForest)
+library(DALEX)
+library(e1071)
+library(xgboost)
+```
+
+```{r, include=FALSE}
+library(InformationValue)
+```
+
+
+```{r}
+num_vars_imp <- function(dataframe, num_vars){
+
+  dataframe <- dataframe[, c(num_vars,"OBITO")]
+  
+  #random forest
+  rf_mod <- randomForest(factor(OBITO) ~ ., data=dataframe, ntree=100)
+
+  #regressão logística
+  lg_mod <- glm(OBITO ~ ., data=dataframe, family = 'binomial')
+  
+  #support vector machines
+  svm_mod <- svm(OBITO ~., data=dataframe, type='eps-regression')
+  
+  explained_rf <- explain.default(rf_mod, data=dataframe, y=dataframe$OBITO)
+
+  explained_lg <- explain(lg_mod, data = dataframe, y=dataframe$OBITO)
+
+  explained_svm <- explain(svm_mod, data=dataframe, y=dataframe$OBITO)
+
+  rf_imp <- variable_importance(explained_rf, type = 'variable_importance')
+  lg_imp <- variable_importance(explained_lg, type = 'variable_importance')
+  svm_imp <- variable_importance(explained_svm, type = 'variable_importance')
+  
+  #print(varimps)
+  nvi <- plot(rf_imp, lg_imp, svm_imp)
+  
+  return(nvi)
+}
+
+num_vars_imp(df,numeric_features)
+```
+
+
+```{r}
+cat_vars_imp <- function(dataframe, fac_vars){
+  
+  dataframe <- dataframe[, c(fac_vars,"OBITO")]
+  
+  #todas as variáveis categóricas menos "OBITO" (ultima variável da base)
+  vars_to_ifwe <- colnames(dataframe[1:(length(dataframe)-1)])
+  
+  # Init Output
+  df_iv <- data.frame(VARS=vars_to_ifwe, IV=numeric(length(vars_to_ifwe)), STRENGTH=character(length(vars_to_ifwe)), stringsAsFactors = F)
+  
+  # Extrai o information value para cada variável e armazena na base 'df_iv'
+  for (factor_var in vars_to_ifwe){
+    df_iv[df_iv$VARS == factor_var, "IV"] <- InformationValue::IV(X=dataframe[, factor_var], Y=dataframe$OBITO)
+    df_iv[df_iv$VARS == factor_var, "STRENGTH"] <- attr(InformationValue::IV(X=dataframe[, factor_var], Y=dataframe$OBITO), "howgood")
+  }
+  
+  # Ordena em onrdem decrescente
+  df_iv <- df_iv[order(-df_iv$IV), ]
+ 
+  return(df_iv) 
+}
+
+cat_vars_imp(df, factor_features)
+```
+
+
+```{r}
+var_imp <- function(dataframe){
+  
+  boruta_out <- Boruta(OBITO ~ ., data=na.omit(dataframe), doTrace=0)
+  
+  rough_fix <- TentativeRoughFix(boruta_out)
+  
+  signif_vars <- getSelectedAttributes(rough_fix)
+  
+  p <- plot(rough_fix, cex.axis=.7, las=2, xlab="", main="Variable Importance")
+  
+  return(list(signif_vars,p))
+}
+
+df_vip <- var_imp(df)
+df_vip[[2]]
+signif_features <- df_vip[[1]]
+```
+
+
+```{r}
+final_dfs <- function(df_train, df_test, signif_vars){
+  
+  signif_vars <- signif_vars
+  
+  df_train <- df_train[, c(signif_vars,"OBITO")]
+  
+  df_test <- df_test[, c(signif_vars,"OBITO")]
+  
+  return(list(df_train, df_test))
+}
+
+final_data <- final_dfs(df,dft,signif_features)
+
+train_data <- final_data[[1]]
+test_data <- final_data[[2]]
+```
+
+
+```{r}
+sapply(train_data, class)
+```
+
+
+```{r}
+sapply(test_data, class)
+```
+
+
+```{r}
+sapply(dfg, class)
+```

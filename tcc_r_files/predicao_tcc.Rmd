@@ -1,0 +1,213 @@
+---
+title: "predicao_tcc"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+#tratamento dos dados
+library(readr)
+library(plyr)
+library(chron)
+library(tidyverse)
+library(reshape2)
+library(kableExtra)
+
+
+#mice para completar os dados que estão faltando
+library(mice)
+
+
+#machine learning
+library(caret)#K-fold cross validation
+library(caTools)#Calcular AUC
+library(ROSE) #dealing with imbalanced data
+library(fastAdaboost) #AdaBoost Classification Trees
+library(gbm) #Stochastic Gradient Boosting
+library(binda) #modelo Binary Discriminant Analysis
+library(nnet) #Bayesian Regularized Neural Networks
+library(xgboost) #eXtreme Gradient Boosting
+library(deepnet) #Stacked AutoEncoder Deep Neural Network
+library(MASS) #Generalized Linear Model with Stepwise Feature Selection
+
+
+library(data.table) #otimização do uso de dataframes
+library(tibble) #tabelas
+```
+
+
+```{r}
+test_data$OBITO <- ifelse(test_data$OBITO==1, "sim", "nao")
+train_data$OBITO <- ifelse(train_data$OBITO==1, "sim", "nao")
+
+test_data$OBITO <- as.factor(test_data$OBITO)
+train_data$OBITO <- as.factor(train_data$OBITO)
+```
+
+
+
+
+```{r}
+pred_mort <- function(bancoTreino, bancoPred){
+  
+  # dados para treino
+  train_data <- bancoTreino
+  
+  # dados para controle do teste
+  test_ctrl <- bancoPred
+  
+  # dados para o teste
+  test <- test_ctrl[, -which(names(test_ctrl) %in% c("OBITO"))]
+
+  #lista com os métodos de balanceamento #tirar o down, não parece interessante para esse caso
+  sampling_methods <- c("up", "smote")
+  j <- 1
+  sm_index <- 1
+  maior_valor <- 0 #usado para verificar qual o modelo com maior valor preditivo negativo.
+  
+  for(j in length(sampling_methods)){
+    
+    sm_index <- sm_index + 1
+    j <- j + 1
+    
+    #Create train/test index
+    # Create trainControl object: myControl - Deve ser utilizado em todos os modelos para que sejam comparáveis
+    myControl <- trainControl(
+      method = "repeatedcv", #"repeatedcv" é o método para realizar as repetições # cv cross validation
+      number = 2, #number é o número de folds   ##use 10 folds
+      repeats = 2, #repeats é o número de repetições para cada fold ##use 5 repeats
+      summaryFunction = twoClassSummary,
+      classProbs = TRUE, # IMPORTANT!
+      verboseIter = FALSE,
+      savePredictions = TRUE,
+      returnResamp = "all",
+      sampling = sampling_methods[sm_index], #balanceamento dos dados
+      allowParallel = TRUE
+    )
+    
+      #lista de modelos que serão usados inicialmente 
+      # "glm" = Generalized Linear Model, "ranger" = Random Forest, "knn" = k-Nearest Neighbors, 
+      #"nnet" = Neural Network, "dnn" = Stacked AutoEncoder Deep Neural Network, 
+      #"xgbTree" = eXtreme Gradient Boosting, "gbm" = Stochastic Gradient Boosting, "adaboost" = AdaBoost Classification Trees.
+      
+      # "glm", "ranger", "knn", "gbm", "nnet", "adaboost", "xgbTree", "dnn"
+      #"ranger", "gbm", "nnet"
+      modelos <- c("ranger")
+      
+      i <- 1 #indice para atualizar o while
+      index <- 1 #indice que retorna o modelo da lista
+      #voltar o "maior_valor" para esta posição se der errado ####################################################################
+      #espec <- 0 #usado para verificar qual o modelo com maior especificidade.
+      
+      #lista com os métodos de balanceamentos
+      metrics <- c("ROC", "Sens")
+      k <- 1
+      m_index <- 1
+      
+      for(k in length(metrics)){
+        
+        m_index <- m_index + 1
+        k <- k + 1
+      
+        #loop para selecionar o melhor algoritmo
+        while(i <= length((modelos))) {
+          
+          # Fit model
+          model <- train(
+          OBITO ~ . , #variável preditiva
+          data = train_data, #banco de treino
+          #preProcess = c("center", "scale"),
+          metric = metrics[m_index], # métrica para comparação dos modelos
+          method = modelos[index], #lista com indice (retorna uma string com o nome do método para cada modelo)
+          trControl = myControl #aplica o controle
+          
+          )
+          
+          #fazendo a matriz de confusão para o banco de treino    
+          banco_model <- model$trainingData
+      
+          banco_model$.outcome <- as.factor(banco_model$.outcome)
+      
+          cm_t <- confusionMatrix(banco_model$.outcome, sample(banco_model$.outcome))
+          
+      
+          # Print model to console
+          model
+          
+          # Print maximum ROC statistic
+          max(model[["results"]][["ROC"]])
+          
+          #predição dos modelos no banco para matriz de confusão
+          predictionsCM <- predict(model, test)
+          
+          #predição dos modelos no banco para probabilidade
+          predictions <- predict(model, test, type = "prob")
+          
+          #o test_control é usado para comparação com os valores da predição, gerando a matriz de confusão.
+          cm <- confusionMatrix(predictionsCM, test_ctrl$OBITO)
+          
+          #extraindo os resultados da matriz de confusão
+          cm_results <- cm$byClass %>% as.list()
+          
+          #extraindo a sensibilidade
+          sens <- cm_results[1] %>% as.data.frame() # [1] para sens
+          sens <- sens$Sensitivity #Sensitivity ou Specificity
+          
+          
+          #verificação do maior valor preditivo negativo, como inicialmente o maior valor está atribuído como 0, o primeiro modelo sempre terá o maior valor, ou seja, sempre que um modelo conseguir alcançar um valor preditivo negativo maior que o armazenado na memória, este passa a ser o instrumento de verificação.
+          if(sens > maior_valor){
+            maior_valor <- sens #valor preditivo positivo passa a ser o maior valor
+            resultado <- paste("O melhor modelo foi: ", modelos[index], ", usando o método de balanceamento: ", sampling_methods[sm_index], "com a métrica: ", metrics[m_index], ", com sensibilidade de: ", sens) #mensagem para informar o modelo com melhor resultado
+            cm_melhor <- cm #cm armazena os dados da matriz de confusão (teste) do melhor modelo
+            cm_t_melhor <- cm_t #cm_t armazena os dados da matriz de confusão (treino) do melhor modelo
+            melhor_modelo <- model
+            
+            #colando a coluna da predição para comparar com a real
+            resultados <- cbind(test_ctrl, predictions)
+            
+            #cria uma coluna com a probabilidade em % de OBITO
+            resultados["Prob"] <- resultados$sim * 100
+            
+            modelo <- modelos[index]
+            samp <- sampling_methods[sm_index]
+            metrica <- metrics[m_index]
+            
+          }
+          else{
+            maior_valor <- maior_valor #caso a verificação falhe, o maior_valor continua sendo ele mesmo ("atual")
+
+          }
+          
+          #atualiza o indice para o i (while), e index (lista de modelos)
+          i <- i + 1
+          index <- index + 1
+          
+        }
+      }
+  }
+    #desenha a matriz de confusão para o cm armazenado com o melhor modelo
+    #cm_p <- draw_confusion_matrix(cm_melhor)  
+  
+  #retorno da função (matriz de confusão de treino (cm_t), mensagem de resultado (resultado), desenho da matriz de confusão de teste (cm_p))
+  return(list(melhor_modelo, cm_melhor))
+  
+}
+```
+
+```{r}
+test_data$TPAPRESENT_SINASC <- as.factor(test_data$TPAPRESENT_SINASC)
+test_data$ESCMAE2010_SINASC <- as.factor(test_data$ESCMAE2010_SINASC)
+test_data$ESCMAE_SINASC <- as.factor(test_data$ESCMAE_SINASC)
+```
+
+
+```{r}
+modelo <- pred_mort(train_data, test_data)
+modelo
+best <- modelo[1]
+matriz <- modelo[2]
+```

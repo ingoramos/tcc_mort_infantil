@@ -1,0 +1,329 @@
+---
+title: "analise_tcc"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Pacotes usados
+```{r, include=FALSE}
+#tratamento dos dados
+library(readr)
+library(plyr)
+library(chron)
+library(tidyverse)
+library(reshape2)
+library(kableExtra)
+
+#visualização
+library(ggplot2)
+library(plotly)
+
+
+#lidar com as tabelas
+library(tibble)
+```
+
+
+```{r}
+#dfg <- read_data(csv_file = "completedSinasc", ';')
+dfg
+```
+
+
+```{r}
+dim(dfg)
+```
+
+
+```{r}
+head(dfg)
+```
+
+```{r}
+summary(dfg)
+```
+
+
+```{r, include=FALSE}
+library(ggExtra)
+library(collapsibleTree)
+```
+
+```{r}
+boxp <- function(data){
+  
+  sub_box <- data[data$CONSPRENAT_SINASC != 99, ]
+  
+  p <- ggplot(sub_box, aes_string(x="SEMAGESTAC_SINASC", y="CONSPRENAT_SINASC", color="OBITO", size="cyl")) +
+    geom_point(size=3) +
+    scale_fill_brewer(palette = "Set2")
+
+  p1 <- ggMarginal(p, type = 'histogram')
+  p1
+  
+  return(p1)
+}
+
+boxp(dfg)
+```
+
+
+```{r}
+bubblep <- function(data){
+  
+  sub_bubble <- data[data$CONSPRENAT_SINASC != 99, ]
+  
+  sub_bubble$OBITO <- as.factor(sub_bubble$OBITO)
+
+  sub_bubble %>%
+    arrange(desc(QTDGESTANT_SINASC))
+  
+  windowsFonts(Times=windowsFont("TT Times New Roman"))
+  
+  p <- ggplot(data=sub_bubble, aes(x=SEMAGESTAC_SINASC, y=CONSPRENAT_SINASC, size=QTDGESTANT_SINASC, fill=OBITO)) +
+      geom_point(alpha=0.5, shape=21, color="black") +
+      scale_size(range = c(.1, 24), name='Quantidade Gestações') +
+      scale_fill_brewer(palette="Set2")+
+      theme_minimal() +
+      theme(legend.position="bottom") +
+      ylab("Consultas pré Natal") +
+      xlab("Semanas de Gestação") +
+      theme(legend.position = "none")
+  
+  return(p)
+
+}
+
+bubblep(dfg)
+```
+
+
+```{r}
+histp <- function(data){
+  
+  hist_data <- data[data$CONSPRENAT_SINASC != 99, ]
+  
+  p <- hist_data %>%
+    ggplot( aes(x=CONSPRENAT_SINASC, fill=RACACORMAE_SINASC)) +
+      geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+      scale_fill_brewer(palette="Paired")+
+      theme_minimal() +
+      labs(fill="")
+  
+  ggplotly(p)
+  
+  return(p)
+}
+
+histp(dfg)
+```
+
+
+```{r}
+boxJitterp <- function(data) {
+  
+  box_ind_data <- data[data$CONSPRENAT_SINASC != 99, ]
+
+  # Plot
+  bp <- box_ind_data %>%
+    ggplot( aes(x=ESCMAEAGR1_SINASC, y=CONSPRENAT_SINASC, fill=ESCMAEAGR1_SINASC)) +
+      geom_boxplot() +
+      geom_jitter(color="black", size=0.4, alpha=0.9) +
+      scale_fill_brewer(palette="Paired")+
+      theme_minimal() +
+      theme(
+        legend.position="none",
+        plot.title = element_text(size=11,),
+        axis.text.x = element_text(angle = 45, vjust = 1,
+                                               size = 12, hjust = 1, family = "serif")
+      ) +
+      ggtitle("Boxplot com indivíduos") +
+      xlab("")
+  
+  bp
+  
+  return(bp)
+  
+}
+
+boxJitterp(dfg)
+```
+
+
+```{r}
+dp <- function(data) {
+  
+  esc_data <- summary(data$ESCMAEAGR1_SINASC)
+  esc_data <- as.data.frame(esc_data)
+  #trasformar "rownames" em variavel
+  esc_data <- rownames_to_column(esc_data, var='esc')
+  names(esc_data) <- c("feature", "value")
+  esc_data$group <- 'escolaridade'
+  
+  donut_esc_data <- esc_data
+  
+  donut_esc_data$fraction <- donut_esc_data$value / sum(donut_esc_data$value)
+  
+  donut_esc_data$ymax = cumsum(donut_esc_data$fraction)
+  
+  # Compute the bottom of each rectangle
+  donut_esc_data$ymin = c(0, head(donut_esc_data$ymax, n=-1))
+  
+  dp <- ggplot(donut_esc_data, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=feature)) +
+     geom_rect() +
+     scale_fill_brewer(palette="Paired")+
+     theme_minimal() +
+     coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+     xlim(c(2, 4)) # Try to remove that to see how to make a pie chart
+  
+  return(dp)
+
+}
+
+dp(dfg)
+```
+
+
+
+```{r}
+cbp <- function(data){
+  
+  #ESCOLARIDADE
+  esc_data <- summary(data$ESCMAEAGR1_SINASC)
+  esc_data <- as.data.frame(esc_data)
+  #trasformar "rownames" em variavel
+  esc_data <- rownames_to_column(esc_data, var='esc')
+  names(esc_data) <- c("feature", "value")
+  esc_data$group <- 'escolaridade'
+  
+  #RACACOR
+  raca_data <- summary(data$RACACORMAE_SINASC)
+  raca_data <- as.data.frame(raca_data)
+  #trasformar "rownames" em variavel
+  raca_data <- rownames_to_column(raca_data, var='a')
+  names(raca_data) <- c("feature", "value")
+  raca_data$group <- 'raça_cor'
+  
+  #GESTACAO
+  gest_data <- summary(data$GESTACAO_SINASC)
+  gest_data <- as.data.frame(gest_data)
+  #trasformar "rownames" em variavel
+  gest_data <- rownames_to_column(gest_data, var='a')
+  names(gest_data) <- c("feature", "value")
+  gest_data$group <- 'gestacao'
+  
+  #GRAVIDEZ
+  grav_data <- summary(data$GRAVIDEZ_SINASC)
+  grav_data <- as.data.frame(grav_data)
+  #trasformar "rownames" em variavel
+  grav_data <- rownames_to_column(grav_data, var='a')
+  names(grav_data) <- c("feature", "value")
+  grav_data$group <- 'gravidez'
+  
+  #PARTO
+  parto_data <- summary(data$PARTO_SINASC)
+  parto_data <- as.data.frame(parto_data)
+  #trasformar "rownames" em variavel
+  parto_data <- rownames_to_column(parto_data, var='a')
+  names(parto_data) <- c("feature", "value")
+  parto_data$group <- 'parto'
+  
+  #CONSULTAS
+  cons_data <- summary(data$CONSULTAS_SINASC)
+  cons_data <- as.data.frame(cons_data)
+  #trasformar "rownames" em variavel
+  cons_data <- rownames_to_column(cons_data, var='a')
+  names(cons_data) <- c("feature", "value")
+  cons_data$group <- 'consultas'
+  
+  
+  circularBar_data <- rbind(esc_data, raca_data, gest_data, grav_data, parto_data, cons_data)
+  
+  #circularBar_data <- rownames_to_column(circularBar_data, var='id')
+  
+  
+  for(i in 1:nrow(circularBar_data)){
+    circularBar_data$perc[i] <- (circularBar_data$value[i] / 24533) * 100 
+  }
+  
+  empty_bar <- 3
+
+  to_add <- data.frame(matrix(NA, empty_bar*nlevels(circularBar_data$group), ncol(circularBar_data)))
+  colnames(to_add) <- colnames(circularBar_data)
+  to_add$group <- rep(levels(circularBar_data$group), each=empty_bar)
+  circularBar_data <- rbind(circularBar_data, to_add)
+  
+  circularBar_data <- circularBar_data %>% arrange(group)
+  circularBar_data$id <- seq(1, nrow(circularBar_data))
+  
+  # prepare a data frame for base lines
+  base_data <- circularBar_data %>% 
+    group_by(group) %>% 
+    summarize(start=min(id), end=max(id) - empty_bar) %>% 
+    rowwise() %>% 
+    mutate(title=mean(c(start, end)))
+   
+  # prepare a data frame for grid (scales)
+  grid_data <- base_data
+  grid_data$end <- grid_data$end[ c( nrow(grid_data), 1:nrow(grid_data)-1)] + 1
+  grid_data$start <- grid_data$start - 1
+  grid_data <- grid_data[-1,]
+  
+  label_data <- circularBar_data
+  num_bars <- nrow(label_data)
+  
+  #label_data$id <- as.numeric(label_data$id)
+  angle <- 90 -360 * (label_data$id-0.5) / num_bars
+  
+  
+  label_data$hjust<-ifelse( angle < -90, 1, 0)
+   
+  # flip angle BY to make them readable
+  label_data$angle<-ifelse(angle < -90, angle+180, angle)
+  
+  p <- ggplot(circularBar_data, aes(x=as.factor(id), y=perc, fill=group)) +
+  
+    geom_bar(stat="identity", alpha=0.5) +
+  
+    ylim(-100,120) +
+    
+    theme_minimal() +
+    theme(
+      axis.text = element_blank(),
+      axis.title = element_blank(),
+      panel.grid = element_blank(),
+      plot.margin = unit(rep(-2,4), "cm")     # This remove unnecessary margin around plot
+    ) +
+    
+    coord_polar(start = 0)+
+    
+    geom_text(data=label_data, aes(x=id, y=perc+10, label=feature, hjust=hjust), color="black", 
+              fontface="bold",alpha=0.6, size=2.5, angle= label_data$angle, inherit.aes = FALSE )
+    
+  
+  return(p)
+    
+}
+
+cbp(dfg)
+```
+
+
+```{r}
+tp <- function(data){
+  
+  vars <- c('GESTACAO_SINASC', 'CONSULTAS_SINASC', 'IDANOMAL_SINASC')
+  sub_data <- data[, vars]
+
+  #tentar agrupar os valores de alguma forma e contar a quantidade de dados
+  #https://adeelk93.github.io/collapsibleTree/
+  tp <- collapsibleTree(df=sub_data, c('GESTACAO_SINASC', 'CONSULTAS_SINASC', 'IDANOMAL_SINASC'), fill='lightsteelblue', tooltip = TRUE, collapsed = FALSE)
+ 
+  return(tp)
+}
+
+tp(dfg)
+```
