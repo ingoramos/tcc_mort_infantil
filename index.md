@@ -14,4 +14,5 @@ The database had almost 99 variables, from two different sources, these being SI
 So, the features from the SINASC database could all be used for the study, because unlike the other base, this one is filled with data from the live births.
 There were some problems with the database, that required some fixes. The first one, was the missing data in some columns, the second was the wrong labeled data and finally, the large amount of variables that might not be meaningful for the creation of the machine learning model.
 To solve the problem with the missing data, a function to count these values was created, as the image shows the result:
-![Figure: Percentage of missing values](/output1.png)
+![Figure: Percentage of missing values](/imgs/output1.png)
+Format: ![Alt Text](url)
